@@ -164,9 +164,7 @@ void UpdateMaskAndPrefix(HWND hwnd)
 	{
 		DWORD shifted = dwIPmask >> i;
 		std::bitset<32> bits(shifted);
-		std::cout << "i = " << i
-			<< " | shifted = " << bits
-			<< " | bit " << (shifted & 1);
+		std::cout << "i = " << i << " | shifted = " << bits << " | bit " << (shifted & 1);
 
 		if ((shifted & 1) == 1)
 		{
