@@ -8,12 +8,15 @@
 #include<iphlpapi.h>								// Работа с IP
 #include<stdio.h>									// Стандартный ввод/вывод C
 #include<iostream>
+#include "FormatLastError.h"
 
 using namespace std;
 
 #pragma comment(lib,"Ws2_32.lib")					// Линкуем библиотеку WinSock
+#pragma comment(lib, "FormatLastError.lib")
+
 #define DEFAULT_PORT "27015"						// Задаём порт по умолчанию (строкой)
-void PrintLastError(const string& context);
+//void PrintLastError(const string& context);
 void main()
 {
 	setlocale(LC_ALL, "rus");
@@ -108,28 +111,28 @@ void main()
 	//freeaddrinfo(result);               // Освобождаем память, выделенную getaddrinfo
 	WSACleanup();                       // Завершаем работу WinSock
 }
-void PrintLastError(const string& context)
-{
-	DWORD errorCode = WSAGetLastError();      // Получаем код последней ошибки
-	LPSTR errorMsg = NULL;
-	printf("error%i:%s", errorCode,errorMsg );
-	FormatMessage(								// ANSI-версия функции
-		FORMAT_MESSAGE_ALLOCATE_BUFFER |        // Автоматически выделить память под сообщение
-		FORMAT_MESSAGE_FROM_SYSTEM |            // Получить текст из системных сообщений Windows
-		FORMAT_MESSAGE_IGNORE_INSERTS,          // Игнорировать плейсхолдеры типа %1
-		NULL,									// Нет пользовательского источника сообщений
-		errorCode,                              // Код ошибки, который нужно расшифровать
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),// Язык по умолчанию (не 0!)
-		(LPSTR)&errorMsg,                       // Указатель на строку с сообщением
-		0,                                      // Максимальная длина (0 — т.к. мы выделяем память)
-		NULL                                    // Нет дополнительных параметров
-	);
-
-	if (errorMsg) {
-		cout << context << " (" << errorCode << "): " << errorMsg << endl;
-		LocalFree(errorMsg); // Освобождаем память
-	}
-	else {
-		cout << context << " (" << errorCode << "): Unknown error." << endl;
-	}
-}
+//void PrintLastError(const string& context)
+//{
+//	DWORD errorCode = WSAGetLastError();      // Получаем код последней ошибки
+//	LPSTR errorMsg = NULL;
+//	printf("error%i:%s", errorCode,errorMsg );
+//	FormatMessage(								// ANSI-версия функции
+//		FORMAT_MESSAGE_ALLOCATE_BUFFER |        // Автоматически выделить память под сообщение
+//		FORMAT_MESSAGE_FROM_SYSTEM |            // Получить текст из системных сообщений Windows
+//		FORMAT_MESSAGE_IGNORE_INSERTS,          // Игнорировать плейсхолдеры типа %1
+//		NULL,									// Нет пользовательского источника сообщений
+//		errorCode,                              // Код ошибки, который нужно расшифровать
+//		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),// Язык по умолчанию (не 0!)
+//		(LPSTR)&errorMsg,                       // Указатель на строку с сообщением
+//		0,                                      // Максимальная длина (0 — т.к. мы выделяем память)
+//		NULL                                    // Нет дополнительных параметров
+//	);
+//
+//	if (errorMsg) {
+//		cout << context << " (" << errorCode << "): " << errorMsg << endl;
+//		LocalFree(errorMsg); // Освобождаем память
+//	}
+//	else {
+//		cout << context << " (" << errorCode << "): Unknown error." << endl;
+//	}
+//}
