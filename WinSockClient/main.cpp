@@ -95,8 +95,10 @@ void main()
 	//}
 
 	// 6) Отправка сообщения серверу
-	CONST CHAR sendbuffer[] = "Hello Server,I am client";
+	CHAR sendbuffer[] = "Hello Server,I am client";
 	CHAR recvbuffer[DEFAULT_BUFFER_LENGTH] = {};
+	do
+	{
 	iResult = send(ConnectSocket, sendbuffer, (int)strlen(sendbuffer), 0); // Отправляем данные на сервер
 	if (iResult == SOCKET_ERROR)        // Проверяем на ошибку
 	{
@@ -120,8 +122,7 @@ void main()
 	
 	//iResult = shutdown(ConnectSocket, SD_SEND);
 	//if (iResult == SOCKET_ERROR) PrintLastError("shutdown");
-	//do
-	//{
+
 		iResult = recv(ConnectSocket, recvbuffer, DEFAULT_BUFFER_LENGTH, 0);
 		if (iResult > 0)cout << "Ответ от сервера: " << iResult << ", Message " << recvbuffer << endl;
 
@@ -129,7 +130,12 @@ void main()
 
 		else //cout << "recvbuffer() failed: " << WSAGetLastError() << endl;
 			PrintLastError("recvbuffer() failed:");
-	//} while (iResult > 0);
+	cout << "Введите сообщение: "; 
+	SetConsoleCP(1251);
+	cin.getline(sendbuffer,DEFAULT_BUFFER_LENGTH);
+	SetConsoleCP(856);
+	} while (iResult > 0);
+	
 
 	iResult = shutdown(ConnectSocket, SD_SEND);
 	if (iResult == SOCKET_ERROR) PrintLastError("shutdown");

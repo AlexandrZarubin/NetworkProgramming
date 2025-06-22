@@ -148,21 +148,21 @@ void main()
 	// 7) Обработка клиента
 	char recvbuf[DEFAULT_BUFFER_LENGTH] = {};
 
-	//do
-	//{
-		//ZeroMemory(recvbuf, DEFAULT_BUFFER_LENGTH);
+	do
+	{
+		ZeroMemory(recvbuf, DEFAULT_BUFFER_LENGTH);
 		iResult = recv(ClientSocket, recvbuf, DEFAULT_BUFFER_LENGTH, 0);
 		if (iResult > 0)
 		{
 			cout << "Получено (" << iResult << " байт): " << string(recvbuf, iResult) << endl;
 
-			// Ответ клиенту
+			 //Ответ клиенту
 			const char* sendbuf = "Hello Client, I am Server!";
 			iResult = send(ClientSocket, sendbuf, (int)strlen(sendbuf), 0);
 			if (iResult == SOCKET_ERROR)
 			{
 				PrintLastError("send failed");
-				//break;
+				break;
 			}
 		}
 		else if (iResult == 0)
@@ -172,10 +172,10 @@ void main()
 		else
 		{
 			PrintLastError("recv failed");
-			//break;
+			break;
 		}
 
-	//} while (iResult > 0);
+	} while (iResult > 0);
 
 	// 8) Завершение соединения
 	iResult = shutdown(ClientSocket, SD_SEND);

@@ -105,7 +105,7 @@ void main()
         }
     } while (true);
 
-    // Корректное завершение (недостижимо при бесконечном цикле)
+    
     if (threadCount)
     {
     WaitForMultipleObjects((DWORD)threadCount, hThreads, TRUE, INFINITE);   // Ожидаем завершения всех клиентских потоков
@@ -214,8 +214,8 @@ DWORD WINAPI ClientSession(LPVOID param)
         send(clientSock, resp, (INT)strlen(resp), 0);
     }
 
-    shutdown(clientSock, SD_SEND);
-    closesocket(clientSock);
+    //shutdown(clientSock, SD_SEND);
+   // closesocket(clientSock);
     printf("Client disconnected  (TID=%lu)\n", GetCurrentThreadId());
     fflush(stdout);
     return 0;
