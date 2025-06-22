@@ -9,7 +9,7 @@ void PrintLastError(const string& context)
 {
 	DWORD errorCode = WSAGetLastError();      // Получаем код последней ошибки
 	LPSTR errorMsg = NULL;
-	printf("error%i:%s", errorCode, errorMsg);
+	//printf("error%i:%s", errorCode, errorMsg);
 	FormatMessage(								// ANSI-версия функции
 		FORMAT_MESSAGE_ALLOCATE_BUFFER |        // Автоматически выделить память под сообщение
 		FORMAT_MESSAGE_FROM_SYSTEM |            // Получить текст из системных сообщений Windows

@@ -16,6 +16,8 @@ using namespace std;
 #pragma comment(lib, "FormatLastError.lib")
 
 #define DEFAULT_PORT "27015"						// Задаём порт по умолчанию (строкой)
+#define DEFAULT_BUFFER_LENGTH 1500
+
 //void PrintLastError(const string& context);
 void main()
 {
@@ -29,7 +31,7 @@ void main()
 		cout << "WSAStartup() failed with code " << iResult << endl;
 		return;
 	}
-	//2)Создаем ClientSocket:
+	//2)Создаем ClientSocket:-Определяем IP-address Сервера
 	addrinfo* result = NULL;														// Указатель на результат getaddrinfo
 	addrinfo hints;																	// Структура с настройками подключения
 
@@ -79,8 +81,8 @@ void main()
 		WSACleanup();																	  // Завершаем WinSock
 		return;
 	}
-	//
-	//// 6) Отправка сообщения серверу
+	
+	// 6) Отправка сообщения серверу
 	//const char* sendbuf = "Hello from client!";  // Буфер с данными, которые хотим отправить
 	//iResult = send(ConnectSocket, sendbuf, (int)strlen(sendbuf), 0); // Отправляем данные на сервер
 	//if (iResult == SOCKET_ERROR)        // Проверяем на ошибку
@@ -92,7 +94,19 @@ void main()
 	//	return;
 	//}
 
-
+	// 6) Отправка сообщения серверу
+	CONST CHAR sendbuffer[] = "Hello Server,I am client";
+	CHAR recvbuffer[DEFAULT_BUFFER_LENGTH] = {};
+	iResult = send(ConnectSocket, sendbuffer, (int)strlen(sendbuffer), 0); // Отправляем данные на сервер
+	if (iResult == SOCKET_ERROR)        // Проверяем на ошибку
+	{
+		cout << "send() failed: " << WSAGetLastError() << endl;
+		PrintLastError("Error send");
+		closesocket(ConnectSocket);
+		freeaddrinfo(result);
+		WSACleanup();
+		return;
+	}
 	//// 7) Приём ответа от сервера (опционально)
 	//char recvbuf[512];                 // Буфер для получения данных
 	//int recvbuflen = 512;              // Размер буфера
@@ -103,36 +117,50 @@ void main()
 	//	cout << "Соединение закрыто сервером." << endl;   // Если 0 — соединение закрыто
 	//else
 	//	cout << "recv() failed: " << WSAGetLastError() << endl; // Если ошибка
+	
+	//iResult = shutdown(ConnectSocket, SD_SEND);
+	//if (iResult == SOCKET_ERROR) PrintLastError("shutdown");
+	//do
+	//{
+		iResult = recv(ConnectSocket, recvbuffer, DEFAULT_BUFFER_LENGTH, 0);
+		if (iResult > 0)cout << "Ответ от сервера: " << iResult << ", Message " << recvbuffer << endl;
 
+		else if (iResult == 0) cout << "Соединение закрыто сервером." << endl;
 
+		else //cout << "recvbuffer() failed: " << WSAGetLastError() << endl;
+			PrintLastError("recvbuffer() failed:");
+	//} while (iResult > 0);
 
-	//// 8) Завершение работы: закрываем сокет и очищаем ресурсы
-	//closesocket(ConnectSocket);         // Закрываем сокет
-	//freeaddrinfo(result);               // Освобождаем память, выделенную getaddrinfo
+	iResult = shutdown(ConnectSocket, SD_SEND);
+	if (iResult == SOCKET_ERROR) PrintLastError("shutdown");
+
+	// 8) Завершение работы: закрываем сокет и очищаем ресурсы
+	closesocket(ConnectSocket);         // Закрываем сокет
+	freeaddrinfo(result);               // Освобождаем память, выделенную getaddrinfo
 	WSACleanup();                       // Завершаем работу WinSock
 }
-//void PrintLastError(const string& context)
-//{
-//	DWORD errorCode = WSAGetLastError();      // Получаем код последней ошибки
-//	LPSTR errorMsg = NULL;
-//	printf("error%i:%s", errorCode,errorMsg );
-//	FormatMessage(								// ANSI-версия функции
-//		FORMAT_MESSAGE_ALLOCATE_BUFFER |        // Автоматически выделить память под сообщение
-//		FORMAT_MESSAGE_FROM_SYSTEM |            // Получить текст из системных сообщений Windows
-//		FORMAT_MESSAGE_IGNORE_INSERTS,          // Игнорировать плейсхолдеры типа %1
-//		NULL,									// Нет пользовательского источника сообщений
-//		errorCode,                              // Код ошибки, который нужно расшифровать
-//		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),// Язык по умолчанию (не 0!)
-//		(LPSTR)&errorMsg,                       // Указатель на строку с сообщением
-//		0,                                      // Максимальная длина (0 — т.к. мы выделяем память)
-//		NULL                                    // Нет дополнительных параметров
-//	);
-//
-//	if (errorMsg) {
-//		cout << context << " (" << errorCode << "): " << errorMsg << endl;
-//		LocalFree(errorMsg); // Освобождаем память
-//	}
-//	else {
-//		cout << context << " (" << errorCode << "): Unknown error." << endl;
-//	}
-//}
+/*void PrintLastError(const string& context)
+{
+	DWORD errorCode = WSAGetLastError();      // Получаем код последней ошибки
+	LPSTR errorMsg = NULL;
+	printf("error%i:%s", errorCode,errorMsg );
+	FormatMessage(								// ANSI-версия функции
+		FORMAT_MESSAGE_ALLOCATE_BUFFER |        // Автоматически выделить память под сообщение
+		FORMAT_MESSAGE_FROM_SYSTEM |            // Получить текст из системных сообщений Windows
+		FORMAT_MESSAGE_IGNORE_INSERTS,          // Игнорировать плейсхолдеры типа %1
+		NULL,									// Нет пользовательского источника сообщений
+		errorCode,                              // Код ошибки, который нужно расшифровать
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),// Язык по умолчанию (не 0!)
+		(LPSTR)&errorMsg,                       // Указатель на строку с сообщением
+		0,                                      // Максимальная длина (0 — т.к. мы выделяем память)
+		NULL                                    // Нет дополнительных параметров
+	);
+
+	if (errorMsg) {
+		cout << context << " (" << errorCode << "): " << errorMsg << endl;
+		LocalFree(errorMsg); // Освобождаем память
+	}
+	else {
+		cout << context << " (" << errorCode << "): Unknown error." << endl;
+	}
+}*/
