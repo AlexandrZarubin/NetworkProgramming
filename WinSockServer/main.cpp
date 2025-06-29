@@ -20,14 +20,20 @@ using namespace std;
 #define DEFAULT_PORT "27015"                                 // Порт, который будет слушать сервер
 #define DEFAULT_BUFFER_LENGTH 1500                            // Размер буфера под данные
 
-// -------------------- Предварительные прототипы --------------
-bool InitWinSock();                                           // (1) Загрузка DLL WinSock (WSAStartup)
-addrinfo* ResolveAddress(const char* port);                   // (2) Получаем подходящий адрес для bind()
-SOCKET  CreateListenSocket(addrinfo* addr);                   // (3) Создаём TCP‑сокет и привязываем его
-SOCKET  AcceptClient(SOCKET listenSock, sockaddr_in& outAddr);// (4) Принимаем клиента, возвращаем его адрес
-void    PrintClientInfo(const sockaddr_in& addr);             // (5) Выводим IP/порт клиента
-void    HandleClient(SOCKET clientSock);                      // (6) Приём‑отправка данных
-void    Cleanup(SOCKET sock);                                 // (7) Корректно завершаем работу
+
+
+
+void Clienthandler(SOCKET client_socket);
+CONST INT MAX_CONNECTIONS = { 5 };							// Максимальное количество одновременно подключенных клиентов
+SOCKET sockets[MAX_CONNECTIONS] = {};						// Массив клиентских сокетов
+HANDLE hThreads[MAX_CONNECTIONS] = {};						// Массив дескрипторов потоков
+DWORD dwThreadIDs[MAX_CONNECTIONS] = {};					// Массив ID потоков
+
+CRITICAL_SECTION cs;										// Критическая секция для синхронизации доступа к сокетам
+void BroadcastMessage(SOCKET sender, const char* data, int len);
+
+INT nextClientID = 1;										// ID, который присваивается следующему клиенту
+int clientIDs[MAX_CONNECTIONS] = {};						// Массив ID клиентов
 void main()
 {
 	setlocale(LC_ALL, "rus");
@@ -40,6 +46,7 @@ void main()
 		PrintLastError("No init");
 		return;
 	}
+	InitializeCriticalSection(&cs);													// Инициализация критической секции
 
 	// 2) Провереяем, не занят ли нужный нам порт 
 	addrinfo* result = NULL;														// Указатель на результат getaddrinfo
@@ -94,71 +101,86 @@ void main()
 
 	// 6) Принимаем клиента
 	
-	/*SOCKET ClientSocket = accept(ListenSocket, NULL, NULL);
-	if (ClientSocket == INVALID_SOCKET)
-	{
-		PrintLastError("accept failed");
-		closesocket(ListenSocket);
-		WSACleanup();
-		return;
-	}
-	*/
+	//sockaddr_in clientAddr = {};             // Структура для хранения адреса клиента
+	//int clientAddrSize = sizeof(clientAddr); // Размер структуры
 
+	//SOCKET ClientSocket = accept(ListenSocket, (sockaddr*)&clientAddr, &clientAddrSize);
+	//if (ClientSocket == INVALID_SOCKET)
+	//{
+	//	PrintLastError("accept failed");
+	//	closesocket(ListenSocket);
+	//	WSACleanup();
+	//	return;
+	//}
+	
+	INT clientCount = 0;
 
-	/* ------------------------показываем IP и порт клиента ---------------- */
-	// Вариант А — получаем адрес прямо в accept 
-	sockaddr_in clientAddr{};                                  // Структура для IP/порт клиента
-	int clientAddrSize = sizeof(clientAddr);
-	SOCKET ClientSocket = accept(ListenSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-	//SOCKET ClientSocket = accept(ListenSocket, NULL,NULL);
-	if (ClientSocket == INVALID_SOCKET)
+	while (true) 
 	{
-		PrintLastError("accept failed");
-		closesocket(ListenSocket);
-		WSACleanup();
-		return;
-	}
+		SOCKET ClientSocket = accept(ListenSocket, NULL, NULL);
+		if (ClientSocket == INVALID_SOCKET) 
+		{
+			PrintLastError("accept failed");
+			continue;
+		}
 
-	char ipStr[INET_ADDRSTRLEN] = {};
-	inet_ntop(AF_INET, &clientAddr.sin_addr, ipStr, INET_ADDRSTRLEN); // Перевели IP в текстовую форму
-	cout << "Клиент подключён (вариант A): IP=" << ipStr << ", порт=" << ntohs(clientAddr.sin_port) << "\n";
+		EnterCriticalSection(&cs);											// Потокобезопасная часть
+		if (clientCount < MAX_CONNECTIONS) 
+		{
+			sockets[clientCount++] = ClientSocket;							// Сохраняем сокет
+			clientIDs[clientCount] = nextClientID++;						// Присваиваем ID
 
-	// Вариант B — если по какой‑то причине адрес не сохранили, можно узнать его через getpeername
-	sockaddr_in peerAddr{};
-	int peerAddrSize = sizeof(peerAddr);
-	if (getpeername(ClientSocket, (sockaddr*)&peerAddr, &peerAddrSize) == 0)
-	{
-		char ipStr2[INET_ADDRSTRLEN] = {};
-		inet_ntop(AF_INET, &peerAddr.sin_addr, ipStr2, INET_ADDRSTRLEN);
-		cout << "Клиент подключён (вариант B): IP=" << ipStr2 << ", порт=" << ntohs(peerAddr.sin_port) << "\n";
-	}
-	else
-	{
-		PrintLastError("getpeername failed");
+			cout << "Клиент подключён. Всего: " << clientCount << "\n";
+			CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)Clienthandler, (LPVOID)ClientSocket, 0, NULL);
+		}
+		else 
+		{
+			cout << "Лимит клиентов исчерпан.\n";
+			closesocket(ClientSocket);
+		}
+		LeaveCriticalSection(&cs);
 	}
 
+	// unreachable, но на всякий случай
+	closesocket(ListenSocket);
+	DeleteCriticalSection(&cs);
+	WSACleanup();
+}
 
-
-
-	cout << "Клиент подключён!\n";
-
-	closesocket(ListenSocket); // больше не нужен
-
-
-	// 7) Обработка клиента
+void Clienthandler(SOCKET client_socket)          
+{
+	INT iResult = 0;
 	char recvbuf[DEFAULT_BUFFER_LENGTH] = {};
+	// ===== Отправка клиенту его ID =====
+	char helloMsg[64];
+	int clientID = 0;
+	
+	EnterCriticalSection(&cs);
+	for (int i = 0; i < MAX_CONNECTIONS; ++i) 
+	{
+		if (sockets[i] == client_socket) 
+		{
+			clientID = clientIDs[i];                    // Получаем ID клиента
+			break;
+		}
+	}
+	LeaveCriticalSection(&cs);
 
+	sprintf_s(helloMsg, sizeof(helloMsg), "[SERVER]: Вы подключены как Клиент %d", clientID);
+	send(client_socket, helloMsg, (int)strlen(helloMsg), 0); // Отправляем ID клиенту
 	do
 	{
 		ZeroMemory(recvbuf, DEFAULT_BUFFER_LENGTH);
-		iResult = recv(ClientSocket, recvbuf, DEFAULT_BUFFER_LENGTH, 0);
+		iResult = recv(client_socket, recvbuf, DEFAULT_BUFFER_LENGTH, 0);
 		if (iResult > 0)
 		{
 			cout << "Получено (" << iResult << " байт): " << string(recvbuf, iResult) << endl;
 
-			 //Ответ клиенту
-			const char* sendbuf = "Hello Client, I am Server!";
-			iResult = send(ClientSocket, sendbuf, (int)strlen(sendbuf), 0);
+			// Формируем сообщение с ID отправителя
+			char message[DEFAULT_BUFFER_LENGTH + 64] = {};
+			sprintf_s(message, sizeof(message), "[Клиент %d]: %.*s", clientID, iResult, recvbuf);
+
+			BroadcastMessage(client_socket, message, (int)strlen(message));           // Рассылаем другим клиентам
 			if (iResult == SOCKET_ERROR)
 			{
 				PrintLastError("send failed");
@@ -177,132 +199,31 @@ void main()
 
 	} while (iResult > 0);
 
-	// 8) Завершение соединения
-	iResult = shutdown(ClientSocket, SD_SEND);
-	if (iResult == SOCKET_ERROR)
+	EnterCriticalSection(&cs);
+	for (int i = 0; i < MAX_CONNECTIONS; ++i) 
 	{
-		PrintLastError("shutdown failed");
-	}
-
-	closesocket(ClientSocket);
-	WSACleanup();
-
-}
-
-// (1) Загрузка DLL WinSock (WSAStartup)
-bool InitWinSock()											
-{
-	WSADATA wsaData{};
-	int res = WSAStartup(MAKEWORD(2, 2), &wsaData);           // Просим версию 2.2
-	if (res != 0)
-	{
-		PrintLastError("WSAStartup failed");
-		return false;
-	}
-	return true;
-}
-
-// (2) Получаем подходящий адрес для bind()
-addrinfo* ResolveAddress(const char* port)
-{
-	addrinfo hints{};
-	hints.ai_family = AF_INET;									// IPv4
-	hints.ai_socktype = SOCK_STREAM;							// TCP
-	hints.ai_protocol = IPPROTO_TCP;							// TCP
-	hints.ai_flags = AI_PASSIVE;								// Слушать локальный адрес
-
-	addrinfo* result = nullptr;
-	int res = getaddrinfo(nullptr, port, &hints, &result);
-	if (res != 0)
-	{
-		PrintLastError("getaddrinfo failed");
-		return nullptr;
-	}
-	return result;
-}
-
-// (3) Создаём TCP‑сокет и привязываем его
-SOCKET CreateListenSocket(addrinfo* addr)
-{
-	SOCKET s = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-	if (s == INVALID_SOCKET)
-	{
-		PrintLastError("socket failed");
-		return INVALID_SOCKET;
-	}
-
-	if (bind(s, addr->ai_addr, static_cast<int>(addr->ai_addrlen)) == SOCKET_ERROR)
-	{
-		PrintLastError("bind failed");
-		closesocket(s);
-		return INVALID_SOCKET;
-	}
-
-	if (listen(s, SOMAXCONN) == SOCKET_ERROR)                 // Переходим в listen
-	{
-		PrintLastError("listen failed");
-		closesocket(s);
-		return INVALID_SOCKET;
-	}
-	return s;                                                 // Готовый socket в режиме ожидания
-}
-
-
-// (4) Принимаем клиента, возвращаем его адрес
-SOCKET AcceptClient(SOCKET listenSock, sockaddr_in& outAddr)
-{
-	int addrSize = sizeof(outAddr);
-	SOCKET client = accept(listenSock, reinterpret_cast<sockaddr*>(&outAddr), &addrSize);
-	if (client == INVALID_SOCKET)
-	{
-		PrintLastError("accept failed");
-	}
-	return client;
-}
-
-// (5) Выводим IP/порт клиента
-void PrintClientInfo(const sockaddr_in& addr)
-{
-	char ipStr[INET_ADDRSTRLEN] = {};
-	inet_ntop(AF_INET, &addr.sin_addr, ipStr, INET_ADDRSTRLEN);
-	cout << "Клиент подключён: IP=" << ipStr << ", порт=" << ntohs(addr.sin_port) << "\n";
-}
-
-// (6) Приём‑отправка данных
-void HandleClient(SOCKET clientSock)
-{
-	char recvBuf[DEFAULT_BUFFER_LENGTH] = {};
-
-	int received = recv(clientSock, recvBuf, DEFAULT_BUFFER_LENGTH, 0);
-	if (received > 0)
-	{
-		cout << "Получено (" << received << " байт): " << string(recvBuf, received) << "\n";
-
-		const char* reply = "Hello Client, I am Server!";
-		int sent = send(clientSock, reply, static_cast<int>(strlen(reply)), 0);
-		if (sent == SOCKET_ERROR)
+		if (sockets[i] == client_socket) 
 		{
-			PrintLastError("send failed");
+			closesocket(sockets[i]);              // Закрываем сокет
+			sockets[i] = INVALID_SOCKET;          // Помечаем как свободный
+			clientIDs[i] = 0;
+			break;
 		}
 	}
-	else if (received == 0)
-	{
-		cout << "Клиент закрыл соединение.\n";
-	}
-	else
-	{
-		PrintLastError("recv failed");
-	}
+	LeaveCriticalSection(&cs);
 
-	// Завершаем общение корректно — отправляем FIN
-	if (shutdown(clientSock, SD_SEND) == SOCKET_ERROR)
-	{
-		PrintLastError("shutdown failed");
-	}
+	shutdown(client_socket, SD_SEND);
+	closesocket(client_socket);
 }
-
-// (7) Корректно завершаем работу
-void Cleanup(SOCKET sock)
+void BroadcastMessage(SOCKET sender, const char* data, int len)
 {
-	closesocket(sock);                                        // Закрываем переданный сокет
+	EnterCriticalSection(&cs);                // Блокируем доступ к массиву сокетов
+	for (int i = 0; i < MAX_CONNECTIONS; ++i)
+	{
+		if (sockets[i] != INVALID_SOCKET && sockets[i] != sender) 
+		{
+			send(sockets[i], data, len, 0);   // Отправляем сообщение клиенту
+		}
+	}
+	LeaveCriticalSection(&cs);                // Разблокируем доступ
 }

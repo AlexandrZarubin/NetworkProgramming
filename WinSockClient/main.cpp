@@ -10,6 +10,7 @@
 #include<iostream>
 #include "FormatLastError.h"
 
+
 using namespace std;
 
 #pragma comment(lib,"Ws2_32.lib")					// Линкуем библиотеку WinSock
@@ -17,6 +18,9 @@ using namespace std;
 
 #define DEFAULT_PORT "27015"						// Задаём порт по умолчанию (строкой)
 #define DEFAULT_BUFFER_LENGTH 1500
+
+DWORD WINAPI ReceiveThread(LPVOID socket_ptr);   // Функция потока приёма
+DWORD WINAPI SendThread(LPVOID socket_ptr);      // Функция потока отправки
 
 //void PrintLastError(const string& context);
 void main()
@@ -82,68 +86,26 @@ void main()
 		return;
 	}
 	
-	// 6) Отправка сообщения серверу
-	//const char* sendbuf = "Hello from client!";  // Буфер с данными, которые хотим отправить
-	//iResult = send(ConnectSocket, sendbuf, (int)strlen(sendbuf), 0); // Отправляем данные на сервер
-	//if (iResult == SOCKET_ERROR)        // Проверяем на ошибку
-	//{
-	//	cout << "send() failed: " << WSAGetLastError() << endl;
-	//	closesocket(ConnectSocket);
-	//	freeaddrinfo(result);
-	//	WSACleanup();
-	//	return;
-	//}
-
-	// 6) Отправка сообщения серверу
-	CHAR sendbuffer[] = "Hello Server,I am client";
-	CHAR recvbuffer[DEFAULT_BUFFER_LENGTH] = {};
-	do
-	{
-	iResult = send(ConnectSocket, sendbuffer, (int)strlen(sendbuffer), 0); // Отправляем данные на сервер
-	if (iResult == SOCKET_ERROR)        // Проверяем на ошибку
-	{
-		cout << "send() failed: " << WSAGetLastError() << endl;
-		PrintLastError("Error send");
-		closesocket(ConnectSocket);
-		freeaddrinfo(result);
-		WSACleanup();
-		return;
-	}
-	//// 7) Приём ответа от сервера (опционально)
-	//char recvbuf[512];                 // Буфер для получения данных
-	//int recvbuflen = 512;              // Размер буфера
-	//iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0); // Получаем данные
-	//if (iResult > 0)
-	//	cout << "Ответ от сервера: " << string(recvbuf, iResult) << endl; // Если получено что-то — выводим
-	//else if (iResult == 0)
-	//	cout << "Соединение закрыто сервером." << endl;   // Если 0 — соединение закрыто
-	//else
-	//	cout << "recv() failed: " << WSAGetLastError() << endl; // Если ошибка
+	// Создаём поток для приёма сообщений от сервера
+	HANDLE hRecvThread = CreateThread(NULL, 0, ReceiveThread, (LPVOID)ConnectSocket, 0, NULL);
 	
-	//iResult = shutdown(ConnectSocket, SD_SEND);
-	//if (iResult == SOCKET_ERROR) PrintLastError("shutdown");
+	// Создаём поток для отправки сообщений серверу
+	HANDLE hSendThread = CreateThread(NULL, 0, SendThread, (LPVOID)ConnectSocket, 0, NULL);
 
-		iResult = recv(ConnectSocket, recvbuffer, DEFAULT_BUFFER_LENGTH, 0);
-		if (iResult > 0)cout << "Ответ от сервера: " << iResult << ", Message " << recvbuffer << endl;
 
-		else if (iResult == 0) cout << "Соединение закрыто сервером." << endl;
+	// Ждём завершения потока отправки
+	WaitForSingleObject(hSendThread, INFINITE);
+	// Принудительно завершаем поток приёма
+	TerminateThread(hRecvThread, 0);
 
-		else //cout << "recvbuffer() failed: " << WSAGetLastError() << endl;
-			PrintLastError("recvbuffer() failed:");
-	cout << "Введите сообщение: "; 
-	SetConsoleCP(1251);
-	cin.getline(sendbuffer,DEFAULT_BUFFER_LENGTH);
-	SetConsoleCP(856);
-	} while (iResult > 0);
 	
 
-	iResult = shutdown(ConnectSocket, SD_SEND);
-	if (iResult == SOCKET_ERROR) PrintLastError("shutdown");
-
-	// 8) Завершение работы: закрываем сокет и очищаем ресурсы
-	closesocket(ConnectSocket);         // Закрываем сокет
-	freeaddrinfo(result);               // Освобождаем память, выделенную getaddrinfo
-	WSACleanup();                       // Завершаем работу WinSock
+	// Закрываем дескрипторы потоков
+	CloseHandle(hRecvThread);
+	CloseHandle(hSendThread);
+	closesocket(ConnectSocket);        // Закрываем сокет
+	freeaddrinfo(result);              // Освобождаем данные getaddrinfo
+	WSACleanup();                      // Завершаем работу с WinSock
 }
 /*void PrintLastError(const string& context)
 {
@@ -170,3 +132,59 @@ void main()
 		cout << context << " (" << errorCode << "): Unknown error." << endl;
 	}
 }*/
+// Функция приёма сообщений от сервера
+DWORD WINAPI ReceiveThread(LPVOID socket_ptr)
+{
+	SOCKET ConnectSocket = (SOCKET)socket_ptr;         // Приводим указатель к SOCKET
+	char recvbuffer[DEFAULT_BUFFER_LENGTH] = {};       // Буфер для данных
+	int iResult;
+
+	do {
+		ZeroMemory(recvbuffer, DEFAULT_BUFFER_LENGTH); // Очищаем буфер
+		iResult = recv(ConnectSocket, recvbuffer, DEFAULT_BUFFER_LENGTH, 0); // Принимаем данные
+		if (iResult > 0) {
+			// Если есть данные — выводим
+			cout << "\n[Сервер]: " << string(recvbuffer, iResult) << "\nВведите сообщение: ";
+		}
+		else if (iResult == 0) {
+			// Сервер завершил соединение
+			cout << "\n[Сервер закрыл соединение]\n";
+			break;
+		}
+		else {
+			// Ошибка приёма
+			PrintLastError("recv failed");
+			break;
+		}
+	} while (iResult > 0);
+
+	return 0;
+}
+
+// Функция отправки сообщений на сервер
+DWORD WINAPI SendThread(LPVOID socket_ptr)
+{
+	SOCKET ConnectSocket = (SOCKET)socket_ptr;         // Приводим указатель к SOCKET
+	char sendbuffer[DEFAULT_BUFFER_LENGTH] = {};       // Буфер для отправки
+	int iResult;
+
+	while (true) {
+		cout << "Введите сообщение: ";                 // Запрос на ввод
+		SetConsoleCP(1251);                            // Устанавливаем кодировку ввода
+		cin.getline(sendbuffer, DEFAULT_BUFFER_LENGTH); // Читаем строку из консоли
+		SetConsoleCP(866);                             // Возвращаем кодировку консоли
+
+		if (strcmp(sendbuffer, "exit") == 0)           // Если введено "exit", выходим
+			break;
+
+		// Отправка сообщения на сервер
+		iResult = send(ConnectSocket, sendbuffer, (int)strlen(sendbuffer), 0);
+		if (iResult == SOCKET_ERROR) {
+			PrintLastError("send failed");             // Ошибка при отправке
+			break;
+		}
+	}
+
+	shutdown(ConnectSocket, SD_SEND);                  // Завершаем отправку
+	return 0;
+}
